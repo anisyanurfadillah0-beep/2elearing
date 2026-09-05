@@ -1,0 +1,1046 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  BookOpen, Brain, Target, Trophy, ChevronRight, ChevronLeft, 
+  X, CheckCircle2, ArrowRight, ShieldCheck,
+  FileText, Send, User, Edit3, UserPlus,
+  Bot, AlertTriangle, Eye, Sparkles, Award, MessageSquare, Trash2,
+  Table, Calculator, LogIn, Clock, Calendar, Smartphone, PlayCircle, Video,
+  Users, Settings, Activity
+} from 'lucide-react';
+
+// ==========================================
+// 1. SETUP FIREBASE & INISIALISASI
+// ==========================================
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, addDoc, getDocs, updateDoc, doc } from 'firebase/firestore';
+
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'mathlearn-lkpd-app';
+const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+let firebaseConfig = {};
+try { firebaseConfig = JSON.parse(firebaseConfigStr); } catch (e) { console.error(e); }
+
+let app, auth, db;
+try {
+  if (Object.keys(firebaseConfig).length > 0) {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  }
+} catch (error) { console.error("Firebase init error:", error); }
+
+
+// ==========================================
+// 2. DATA & KONFIGURASI KONTEN
+// ==========================================
+const MATERI_LIST = [
+  { id: 'pythagoras', name: 'Teorema Pythagoras', desc: 'Pemahaman Bertahap (Konsep, Visualisasi, Pembuktian & Soal Kontekstual)', badge: 'Materi Lengkap', icon: '📐', meetings: [1, 2] },
+  { id: 'lingkaran', name: 'Lingkaran (Keliling & Luas)', desc: 'Konsep Dasar Lingkaran', badge: 'Segera Hadir', icon: '⭕', meetings: [1, 2] }
+];
+
+const LKPD_DATA = [
+  {
+    meeting: 1, topic: 'pythagoras', title: "PRIMITIVE KNOWING", desc: "Mengenal istilah & properti dasar segitiga siku-siku serta rumus dasar persegi.",
+    theory: "Tujuan: Mengingat kembali istilah dasar dan pengetahuan prasyarat (segitiga siku-siku & luas persegi) sebelum masuk ke konsep Teorema Pythagoras.\nPerhatikan gambar segitiga siku-siku di bawah ini dengan cermat.",
+    hasTriangleDiagram: true, mcqs: [],
+    essays: [
+      { id: 'e1_1', type: 'text', q: "1. Perhatikan gambar segitiga siku-siku di atas. Sisi manakah yang menurutmu paling panjang? Mengapa?", key: "Sisi c (hipotenusa) karena berada tepat di hadapan sudut siku-siku." },
+      { id: 'e1_2', type: 'text', q: "2. Apa yang kamu ketahui tentang segitiga siku-siku? Sebutkan ciri-cirinya.", key: "Memiliki satu sudut tepat 90 derajat, dua sisi saling tegak lurus, dan satu sisi miring." }
+    ]
+  },
+  {
+    meeting: 1, topic: 'pythagoras', title: "IMAGE MAKING", desc: "Membangun ide awal tentang hubungan sudut dan panjang sisi segitiga.",
+    theory: "Tujuan: Mengamati hubungan posisi sudut siku-siku terhadap hipotenusa dan membuat dugaan awal hubungan antar ketiga sisi.",
+    hasAngleDiagram: true, mcqs: [],
+    essays: [
+      { id: 'e2_1', type: 'text', q: "1. Mengapa pada segitiga siku-siku sisi miring selalu berhadapan dengan sudut siku-siku (90°)?", key: "Karena sudut 90° adalah sudut terbesar." },
+      { id: 'e2_2', type: 'text', q: "2. Apakah ada hubungan antara panjang ketiga sisi pada segitiga siku-siku? Jelaskan menurut pendapatmu!", key: "Ada, kuadrat sisi miring bernilai sama dengan penjumlahan kuadrat kedua sisi siku-siku." }
+    ]
+  },
+  {
+    meeting: 1, topic: 'pythagoras', title: "IMAGE HAVING", desc: "Eksplorasi visual interaktif & pengamatan perubahan luas persegi pada tiap sisi.",
+    theory: "Tujuan: Mengamati secara visual hubungan penjumlahan luas persegi pada dua sisi siku-siku dengan luas persegi pada sisi miring.\nPetunjuk: Geser slider di bawah ini untuk mengubah ukuran sisi a dan b!",
+    hasInteractiveVisualizer: true, mcqs: [],
+    essays: [
+      { id: 'e3_1', type: 'text', q: "1. Bandingkan hasil luas persegi pada sisi a dan b. Jika dijumlahkan, berapa hasilnya?", key: "Hasil penjumlahan luas persegi a dan b." },
+      { id: 'e3_2', type: 'text', q: "2. Sekarang bandingkan hasil penjumlahan tersebut dengan luas persegi pada sisi c (sisi miring). Apa yang kamu temukan?", key: "Jumlah luas persegi a² + b² selalu persis sama dengan luas persegi c²." }
+    ]
+  },
+  {
+    meeting: 1, topic: 'pythagoras', title: "PROPERTY NOTICING", desc: "Memverifikasi pola & merumuskan persamaan matematis Teorema Pythagoras.",
+    theory: "Tujuan: Menyadari sifat sistematis dari pola yang ditemukan dan menuliskannya ke dalam bentuk rumus matematis resmi.",
+    hasTableVerification: true, mcqs: [],
+    essays: [
+      { id: 'e4_1', type: 'text', q: "1. Dari hasil yang kamu dapatkan pada tahap sebelumnya, apakah pola tersebut berlaku untuk semua ukuran segitiga siku-siku yang kamu coba?", key: "Ya, berlaku untuk semua." },
+      { id: 'e4_2', type: 'text', q: "2. Jika luas persegi pada sisi a = a², b = b², dan c = c², bagaimana hubungan ketiganya ditulis dalam persamaan?", key: "a² + b² = c²" }
+    ]
+  },
+  {
+    meeting: 2, topic: 'pythagoras', title: "FORMALIZING & APLIKASI KONTEKSTUAL", desc: "Menerapkan rumus Teorema Pythagoras pada masalah dunia nyata (Tangga & Dinding).",
+    theory: "Tujuan: Menggunakan rumus formal c = √(a² + b²) untuk memecahkan masalah kontekstual kehidupan sehari-hari.",
+    hasLadderIllustration: true, mcqs: [],
+    essays: [
+      { id: 'e5_1', type: 'text', q: "1. Sebuah tangga disandarkan pada dinding setinggi 4 meter, dengan jarak kaki tangga ke dinding 3 meter. Berapa panjang tangga tersebut?", key: "5 meter." },
+      { id: 'e5_2', type: 'text', q: "2. Menurutmu, apakah rumus Pythagoras bisa digunakan pada segitiga yang bukan siku-siku? Jelaskan alasannya!", key: "Tidak bisa." }
+    ]
+  },
+  {
+    meeting: 2, topic: 'pythagoras', title: "OBSERVING & STRUCTURING", desc: "Kebalikan Pythagoras, Tripel Pythagoras, & Rangkuman.",
+    theory: "Tujuan: Memperluas pemahaman ke konsep Kebalikan Pythagoras (jenis segitiga) dan Pythagoras 3D.",
+    mcqs: [],
+    essays: [
+      { id: 'e7_1', type: 'text', q: "1. Diberikan kelompok sisi: (i) 6, 8, 10; (ii) 5, 7, 9. Tentukan manakah yang membentuk segitiga siku-siku dan tumpul!", key: "(i) Siku-siku. (ii) Tumpul." },
+      { id: 'e8_1', type: 'draw_upload', q: "2. Buktikan pemahamanmu! Tulis perhitungan atau gambar penyelesaian pembuktian Pythagoras bebas (opsional upload gambar).", key: "Evaluasi manual/AI berbasis gambar." }
+    ]
+  }
+];
+
+const EVALUASI_DATA = {
+  pythagoras: {
+    mcqs: [
+      { id: 'ev_1', q: "1. Segitiga yang memiliki satu sudut bernilai tepat 90° adalah...", options: ["Segitiga Lancip", "Segitiga Tumpul", "Segitiga Siku-siku", "Segitiga Sama Sisi"], ans: 2 },
+      { id: 'ev_2', q: "2. Pada segitiga siku-siku, sisi terpanjang yang berada di depan sudut 90° disebut...", options: ["Sisi Alas", "Sisi Tegak", "Hipotenusa (Sisi Miring)", "Sisi Sumbu"], ans: 2 },
+      { id: 'ev_3', q: "3. Sebuah tangga 5 meter disandarkan pada tembok setinggi 4 meter. Jarak alas tangga ke tembok adalah...", options: ["2 meter", "3 meter", "3.5 meter", "4.5 meter"], ans: 1 },
+      { id: 'ev_5', q: "4. Manakah rumus Teorema Pythagoras yang benar untuk sisi siku-siku a, b dan sisi miring c?", options: ["a² + b² = c²", "a² - b² = c²", "c² + a² = b²", "a + b = c"], ans: 0 }
+    ],
+    essays: [
+      { id: 'ev_e1', type: 'text', q: "1. Tuliskan kembali rumus Teorema Pythagoras dan jelaskan kapan rumus tersebut dapat digunakan!", key: "a² + b² = c²." },
+      { id: 'ev_e2', type: 'draw_upload', q: "2. Sebuah tangga disandarkan pada dinding setinggi 4 m dengan jarak kaki tangga ke dinding 3 m. Hitunglah panjang tangga tersebut beserta caranya! (Upload foto dianjurkan)", key: "5 m." }
+    ]
+  }
+};
+
+const MATERI_CONTENT = {
+  pythagoras: [
+    { title: "Video Pembelajaran: Materi Pythagoras", type: "video", url: "https://www.youtube.com/embed/_YjodsEa3cM" },
+    { title: "Pengantar Teorema Pythagoras", type: "text", content: "Teorema Pythagoras adalah sebuah aturan matematika yang menjelaskan hubungan antara ketiga sisi pada segitiga siku-siku. Rumus utamanya adalah a² + b² = c²." },
+    { title: "Pembuktian Visual", type: "text", content: "Jika kita membuat persegi di setiap sisi segitiga siku-siku, maka luas persegi pada sisi miring akan selalu persis sama dengan jumlah luas dua persegi pada sisi tegak dan mendatar." }
+  ],
+  lingkaran: [
+    { title: "Materi Lingkaran Belum Tersedia", type: "text", content: "Materi untuk topik Lingkaran sedang dalam tahap penyusunan oleh guru. Silakan cek kembali nanti." }
+  ]
+};
+
+const LATIHAN_DATA = {
+  pythagoras: [
+    { id: 'lat_1', q: "Rumus Pythagoras yang benar adalah...", options: ["a + b = c", "a² + b² = c²", "a² - b² = c²", "a × b = c"], ans: 1, explanation: "Teorema Pythagoras menyatakan kuadrat sisi miring sama dengan jumlah kuadrat sisi tegak penyikunya." },
+    { id: 'lat_2', q: "Tripel Pythagoras yang benar di bawah ini adalah...", options: ["3, 4, 6", "5, 12, 13", "6, 8, 12", "7, 8, 9"], ans: 1, explanation: "5² + 12² = 25 + 144 = 169. Dan 13² = 169. (Terbukti Sama)" }
+  ]
+};
+
+// ==========================================
+// 3. FUNGSI UTILITIES & KOMPONEN BANTU
+// ==========================================
+function evaluateAnswerWithAI(question, studentAns, cheatCount) {
+  let text = ""; let hasImage = false;
+  if (typeof studentAns === 'object' && studentAns !== null) { text = studentAns.text || ""; hasImage = !!studentAns.image; }
+  else if (typeof studentAns === 'string') { text = studentAns; }
+
+  const trimmed = text.trim().toLowerCase();
+  if (trimmed.length === 0 && !hasImage) return { score: 0, feedback: "Jawaban belum diisi." };
+
+  const keyText = (question.key || "").toLowerCase();
+  
+  let baseScore = 2; 
+
+  const keywords = keyText.split(' ').filter(k => k.length > 2);
+  let matchCount = 0;
+  keywords.forEach(kw => { if (trimmed.includes(kw)) matchCount++; });
+
+  if (keywords.length > 0 && matchCount / keywords.length >= 0.5) {
+      baseScore = 9;
+  } else if (trimmed.includes(keyText)) {
+      baseScore = 10;
+  } else if (hasImage) {
+      baseScore = 8;
+  } else {
+      if (/\d+/.test(trimmed) && /\d+/.test(keyText)) {
+          baseScore = 3;
+      } else if (trimmed.length > 15) {
+          baseScore = 5; 
+      }
+  }
+
+  if (cheatCount > 2) baseScore = Math.max(1, baseScore - 3);
+  
+  const finalScore = Math.min(10, baseScore);
+  
+  let feedbackMsg = "";
+  if (finalScore >= 8) {
+      feedbackMsg = hasImage ? "Gambar/penjelasan sudah memuat konsep yang sesuai." : "Luar biasa! Jawaban kamu sudah tepat.";
+  } else if (finalScore >= 5) {
+      feedbackMsg = "Jawaban kamu sudah mengarah ke hal yang benar, namun perlu diperjelas atau ada sedikit kekeliruan.";
+  } else {
+      feedbackMsg = "Jawaban kamu sepertinya masih keliru. Coba periksa kembali pemahamanmu tentang soal ini.";
+  }
+
+  return { score: finalScore, feedback: feedbackMsg };
+}
+
+function DrawingUploadBox({ value, onChange }) {
+  const [text, setText] = useState(value?.text || '');
+  const [image, setImage] = useState(value?.image || null);
+  const fileInputRef = useRef(null);
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => { setImage(reader.result); onChange({ text, image: reader.result }); };
+      reader.readAsDataURL(file);
+    }
+  };
+  const handleTextChange = (e) => { setText(e.target.value); onChange({ text: e.target.value, image }); };
+  const removeImage = () => { setImage(null); onChange({ text, image: null }); };
+
+  return (
+    <div className="space-y-3">
+      <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <button type="button" onClick={() => fileInputRef.current?.click()} className="px-4 py-2.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl font-bold text-xs flex items-center justify-center border border-indigo-200">
+          {image ? '📷 Ganti Foto' : '📷 Upload Foto Jawaban'}
+        </button>
+        {image && <button type="button" onClick={removeImage} className="text-xs text-red-600 font-bold flex items-center"><Trash2 className="w-3.5 h-3.5 mr-1" /> Hapus Foto</button>}
+      </div>
+      {image && <div className="border rounded-2xl p-2 bg-slate-50 max-w-xs"><img src={image} alt="Lampiran" className="rounded-xl w-full max-h-48 object-cover" /></div>}
+      <textarea rows={3} value={text} onChange={handleTextChange} placeholder="Tulis catatan/penjelasan..." className="w-full p-3 rounded-xl border focus:ring-2 focus:ring-indigo-200 outline-none text-xs bg-white" />
+    </div>
+  );
+}
+
+const Level1TriangleDiagram = () => (
+    <div className="bg-slate-900 rounded-2xl p-6 mb-6 text-white shadow-lg">
+      <h3 className="font-bold text-sm text-blue-400 mb-4">Visualisasi Segitiga Siku-Siku</h3>
+      <div className="flex justify-center bg-slate-950 py-4 rounded-xl border border-slate-800">
+        <svg width="280" height="200" viewBox="0 0 280 200"><polygon points="50,160 220,160 50,40" fill="rgba(59, 130, 246, 0.2)" stroke="#3b82f6" strokeWidth="4"/><path d="M 50,140 L 70,140 L 70,160" fill="none" stroke="#f59e0b" strokeWidth="2"/><text x="135" y="180" fill="#60a5fa" fontSize="14">Sisi a (Alas)</text><text x="30" y="100" fill="#34d399" fontSize="14">Sisi b (Tegak)</text><text x="155" y="90" fill="#fbbf24" fontSize="15">Sisi c (Hipotenusa)</text></svg>
+      </div>
+    </div>
+);
+
+const Level3InteractiveVisualizer = () => {
+  const [a, setA] = useState(3); const [b, setB] = useState(4);
+  const c = Math.sqrt(a*a + b*b);
+  return (
+    <div className="bg-slate-900 rounded-2xl p-6 mb-8 text-white shadow-xl">
+      <h3 className="font-bold text-sm text-indigo-400 mb-4">Simulator Luas Persegi</h3>
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="space-y-5 bg-slate-800 p-5 rounded-2xl">
+          <div><label className="text-xs text-blue-400">Sisi a: {a}</label><input type="range" min="2" max="8" value={a} onChange={e=>setA(Number(e.target.value))} className="w-full" /></div>
+          <div><label className="text-xs text-emerald-400">Sisi b: {b}</label><input type="range" min="2" max="8" value={b} onChange={e=>setB(Number(e.target.value))} className="w-full" /></div>
+          <div className="text-sm font-bold text-amber-400">c = {c.toFixed(2)}</div>
+        </div>
+        <div className="bg-slate-950 p-4 rounded-2xl text-center">
+            <div className="text-xs text-amber-200 mt-4">Luas a² ({a*a}) + Luas b² ({b*b}) = Luas c² ({a*a + b*b})</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TableVerificationBox = () => {
+    return <div className="bg-slate-900 rounded-2xl p-5 mb-8 text-white shadow-lg"><h3 className="font-bold text-sm text-amber-400 mb-2">Tabel Verifikasi Pembuktian (a² + b² = c²)</h3><p className="text-xs text-slate-400">Berdasarkan visualisasi di atas, rumus terbukti benar.</p></div>;
+}
+const Level5LadderIllustration = () => {
+    return <div className="bg-slate-900 rounded-2xl p-5 mb-8 text-white shadow-lg"><h3 className="font-bold text-sm text-emerald-400 mb-2">Ilustrasi Tangga & Dinding</h3><p className="text-xs text-slate-400">Sisi miring adalah panjang tangga.</p></div>;
+}
+
+// ==========================================
+// 4. MODUL AUTHENTICATION (LOGIN & REGISTER)
+// ==========================================
+function ModulAuth({ onLogin, db, showToast }) {
+  const [isRegistering, setIsRegistering] = useState(false);
+  
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('student');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!email || !password || (isRegistering && !name)) {
+      showToast("Harap isi semua field!");
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      if (isRegistering) {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), {
+          name, email, password, role, createdAt: new Date().toISOString()
+        });
+        showToast("Registrasi berhasil! Silakan Login.");
+        setIsRegistering(false);
+        setPassword('');
+      } else {
+        const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'));
+        const users = snap.docs.map(doc => doc.data());
+        
+        const foundUser = users.find(u => u.email === email && u.password === password);
+        
+        if (foundUser) {
+          onLogin({
+            name: foundUser.name,
+            username: foundUser.email,
+            role: foundUser.role,
+            class: foundUser.role === 'student' ? 'VIII A' : 'Pengajar/Admin'
+          });
+          showToast(`Berhasil masuk sebagai ${foundUser.name}`);
+        } else {
+          showToast("Email atau Password salah!");
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Terjadi kesalahan sistem.");
+    }
+    setIsLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-gray-100">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4"><BookOpen className="w-8 h-8" /></div>
+          <h1 className="text-2xl font-black text-gray-900">MATHLEARN AI</h1>
+          <p className="text-sm text-gray-500 mt-1">{isRegistering ? 'Buat Akun Baru' : 'Masuk ke Sistem'}</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {isRegistering && (
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Nama Lengkap</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full p-3 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="Contoh: Budi Santoso" />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Email / Username</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="email@sekolah.id" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 rounded-xl border focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="••••••••" />
+          </div>
+
+          {isRegistering && (
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-2">Daftar Sebagai</label>
+              <div className="grid grid-cols-3 gap-2">
+                <button type="button" onClick={() => setRole('student')} className={`py-2 rounded-xl text-xs font-bold border-2 ${role === 'student' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500'}`}>Siswa</button>
+                <button type="button" onClick={() => setRole('teacher')} className={`py-2 rounded-xl text-xs font-bold border-2 ${role === 'teacher' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-gray-200 text-gray-500'}`}>Guru</button>
+                <button type="button" onClick={() => setRole('admin')} className={`py-2 rounded-xl text-xs font-bold border-2 ${role === 'admin' ? 'border-purple-600 bg-purple-50 text-purple-700' : 'border-gray-200 text-gray-500'}`}>Admin</button>
+              </div>
+            </div>
+          )}
+
+          <button type="submit" disabled={isLoading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-md transition text-sm mt-4">
+            {isLoading ? 'Memproses...' : (isRegistering ? 'Daftar Sekarang' : 'Masuk')}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center text-sm text-gray-600">
+          {isRegistering ? "Sudah punya akun? " : "Belum punya akun? "}
+          <button onClick={() => setIsRegistering(!isRegistering)} className="text-blue-600 font-bold hover:underline">
+            {isRegistering ? 'Masuk di sini' : 'Daftar di sini'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// 5. MODUL ADMIN
+// ==========================================
+function ModulAdmin({ db, sessionUser }) {
+  const [users, setUsers] = useState([]);
+  
+  useEffect(() => {
+    const fetchUsers = async () => {
+      if(!db) return;
+      const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'));
+      setUsers(snap.docs.map(doc => ({id: doc.id, ...doc.data()})));
+    };
+    fetchUsers();
+  }, [db]);
+
+  return (
+    <div className="p-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-extrabold text-purple-900 mb-2">Dasbor Administrator</h1>
+        <p className="text-gray-600">Selamat datang, {sessionUser.name}. Kelola pengguna sistem di sini.</p>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border p-6">
+        <h2 className="text-lg font-bold mb-4 flex items-center"><Users className="w-5 h-5 mr-2 text-purple-600"/> Daftar Pengguna Terdaftar</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-100 text-gray-700 text-sm">
+                <th className="p-3">Nama Lengkap</th>
+                <th className="p-3">Email</th>
+                <th className="p-3">Peran (Role)</th>
+                <th className="p-3">Terdaftar Pada</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-sm text-gray-700">
+              {users.map(u => (
+                <tr key={u.id} className="hover:bg-gray-50">
+                  <td className="p-3 font-bold">{u.name}</td>
+                  <td className="p-3">{u.email}</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-1 rounded-md text-xs font-bold ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : u.role === 'teacher' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
+                      {u.role.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="p-3">{u.createdAt ? new Date(u.createdAt).toLocaleDateString('id-ID') : '-'}</td>
+                </tr>
+              ))}
+              {users.length === 0 && <tr><td colSpan="4" className="p-4 text-center text-gray-500">Belum ada pengguna.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// 6. MODUL GURU
+// ==========================================
+function ModulGuru({ db, sessionUser, allSubmissions, fetchSubmissions, showToast }) {
+  const [teacherTab, setTeacherTab] = useState('koreksi');
+  const [activeDetail, setActiveDetail] = useState(null);
+  const [teacherNotes, setTeacherNotes] = useState('');
+  const [overrideScore, setOverrideScore] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSaveFeedback = async () => {
+    if(!db || !activeDetail) return;
+    setIsSaving(true);
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'lkpd_submissions', activeDetail.id);
+      const updates = { teacherNotes, status: 'Sudah Diverifikasi Guru' };
+      if(overrideScore !== '') updates.finalScore = Number(overrideScore);
+      await updateDoc(docRef, updates);
+      showToast("Feedback berhasil disimpan!");
+      fetchSubmissions();
+      setActiveDetail(null);
+    } catch (e) {
+      showToast("Gagal menyimpan feedback");
+    }
+    setIsSaving(false);
+  };
+
+  return (
+    <div className="flex flex-col md:flex-row min-h-[90vh]">
+      <div className="w-full md:w-64 bg-slate-900 text-white p-5 flex flex-col">
+        <div className="flex items-center space-x-3 mb-10"><Bot className="w-8 h-8 text-amber-400" />
+          <div><h2 className="font-black text-lg">Dasbor Guru</h2><p className="text-[10px] text-slate-400">MATHLEARN AI System</p></div>
+        </div>
+        <div className="space-y-2 flex-grow">
+          <button onClick={() => setTeacherTab('koreksi')} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm flex items-center ${teacherTab === 'koreksi' ? 'bg-amber-600' : 'text-slate-300 hover:bg-slate-800'}`}><Edit3 className="w-4 h-4 mr-3"/> Koreksi & Hasil</button>
+          <button onClick={() => setTeacherTab('materi')} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm flex items-center ${teacherTab === 'materi' ? 'bg-amber-600' : 'text-slate-300 hover:bg-slate-800'}`}><BookOpen className="w-4 h-4 mr-3"/> Kelola Materi</button>
+          <button onClick={() => setTeacherTab('jadwal')} className={`w-full text-left px-4 py-3 rounded-xl font-bold text-sm flex items-center ${teacherTab === 'jadwal' ? 'bg-amber-600' : 'text-slate-300 hover:bg-slate-800'}`}><Calendar className="w-4 h-4 mr-3"/> Penjadwalan</button>
+        </div>
+      </div>
+
+      <div className="flex-1 p-6 md:p-10 max-h-screen overflow-y-auto">
+        {teacherTab === 'koreksi' && (
+          !activeDetail ? (
+            <div>
+              <h1 className="text-2xl font-extrabold text-gray-900 mb-6">Hasil Pekerjaan Siswa</h1>
+              <div className="grid gap-4">
+                {allSubmissions.map(sub => (
+                  <div key={sub.id} onClick={() => { setActiveDetail(sub); setTeacherNotes(sub.teacherNotes || ''); setOverrideScore(sub.finalScore || ''); }} className="bg-white p-5 rounded-2xl shadow-sm border cursor-pointer hover:border-amber-400 flex flex-col md:flex-row justify-between md:items-center">
+                    <div>
+                      <h3 className="font-bold text-gray-900">{sub.student?.name} <span className="text-xs text-gray-400">({sub.student?.username})</span></h3>
+                      <p className="text-xs text-gray-500 mt-1">{sub.docType === 'lkpd' ? `LKPD Pertemuan ${sub.meetingId}` : 'Evaluasi'} • {new Date(sub.timestamp).toLocaleString('id-ID')}</p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md mt-2 inline-block ${sub.status.includes('Guru') ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>{sub.status}</span>
+                      {sub.cheatCount > 0 && <span className="text-[10px] ml-2 font-bold px-2 py-0.5 rounded-md bg-red-100 text-red-800"><AlertTriangle className="w-3 h-3 inline mr-1" /> Kecurangan: {sub.cheatCount}</span>}
+                    </div>
+                    <div className="text-center mt-4 md:mt-0"><p className="text-[10px] text-gray-400 font-bold">Skor</p><p className="text-xl font-black text-blue-600">{sub.finalScore}</p></div>
+                  </div>
+                ))}
+                {allSubmissions.length === 0 && <p className="text-gray-500">Belum ada data siswa.</p>}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl shadow-lg border overflow-hidden">
+              <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
+                <div>
+                  <button onClick={() => setActiveDetail(null)} className="text-slate-400 hover:text-white text-xs font-bold mb-2 flex items-center"><ChevronLeft className="w-4 h-4 mr-1"/> Kembali</button>
+                  <h2 className="text-xl font-black">{activeDetail.student?.name}</h2>
+                </div>
+                <div className="text-right"><p className="text-[10px] text-slate-400 font-bold">Total Nilai</p><p className="text-3xl font-black text-amber-400">{activeDetail.finalScore}</p></div>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="bg-red-50 p-4 rounded-xl border border-red-100">
+                  <h3 className="font-bold text-red-900 text-sm flex items-center mb-2"><ShieldCheck className="w-4 h-4 mr-2"/> Laporan Keamanan</h3>
+                  <div className="text-xs text-red-800 space-y-1">
+                      <p><Smartphone className="w-3 h-3 inline mr-1"/> Perangkat: {activeDetail.deviceInfo}</p>
+                      <p><AlertTriangle className="w-3 h-3 inline mr-1"/> Pindah Tab/Aplikasi: {activeDetail.cheatCount} kali</p>
+                      {activeDetail.cheatLogs && activeDetail.cheatLogs.length > 0 && (
+                          <div className="mt-3 bg-red-100 p-3 rounded-lg max-h-32 overflow-y-auto">
+                              <p className="font-bold mb-1">Rincian Waktu & Lokasi Keluar Halaman:</p>
+                              <ul className="list-disc pl-5 space-y-1">
+                                  {activeDetail.cheatLogs.map((log, idx) => (
+                                      <li key={idx}>Pukul {log.time} - Saat mengerjakan: {log.context}</li>
+                                  ))}
+                              </ul>
+                          </div>
+                      )}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-800 text-lg mb-4 border-b pb-2">Rincian Jawaban & Evaluasi AI</h3>
+                  <div className="space-y-4">
+                    {activeDetail.aiEvaluations && Object.keys(activeDetail.aiEvaluations).map(qId => (
+                      <div key={qId} className="bg-gray-50 p-4 rounded-xl border">
+                        <p className="font-semibold text-gray-800 text-sm mb-2">{activeDetail.questionTexts?.[qId]}</p>
+                        <div className="bg-white p-2 rounded text-sm text-gray-600 mb-2">{typeof activeDetail.essayAnswers?.[qId] === 'object' ? activeDetail.essayAnswers?.[qId].text : activeDetail.essayAnswers?.[qId]}</div>
+                        <div className="bg-blue-50 text-blue-900 text-sm p-2 rounded"><strong>AI:</strong> {activeDetail.aiEvaluations[qId].feedback} (Skor: {activeDetail.aiEvaluations[qId].score}/10)</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-amber-50 p-5 rounded-xl border border-amber-200">
+                  <h3 className="font-bold text-amber-900 mb-2">Koreksi Ulang & Umpan Balik Guru</h3>
+                  <div className="mb-4">
+                      <label className="block text-xs font-bold text-amber-900 mb-1">Timpa Nilai AI (Opsional):</label>
+                      <input type="number" min="0" max="100" value={overrideScore} onChange={e => setOverrideScore(e.target.value)} placeholder={`Nilai AI saat ini: ${activeDetail.finalScore}`} className="w-full md:w-1/3 p-2 border border-amber-300 rounded-lg text-sm bg-white" />
+                      <p className="text-[10px] text-amber-700 mt-1">Isi jika Anda sebagai guru ingin mengubah nilai yang diberikan oleh sistem AI.</p>
+                  </div>
+                  <textarea rows="3" value={teacherNotes} onChange={e => setTeacherNotes(e.target.value)} placeholder="Tulis masukan untuk siswa..." className="w-full p-3 rounded-lg border border-amber-300 mb-3 text-sm"></textarea>
+                  <button onClick={handleSaveFeedback} disabled={isSaving} className="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors">{isSaving ? 'Menyimpan...' : 'Simpan Nilai & Feedback'}</button>
+                </div>
+              </div>
+            </div>
+          )
+        )}
+        {teacherTab === 'materi' && (
+          <div>
+            <h1 className="text-2xl font-extrabold text-gray-900 mb-6">Materi Pembelajaran</h1>
+            {MATERI_LIST.map((mat) => (
+                <div key={mat.id} className="bg-white p-6 rounded-2xl shadow-sm border mb-4">
+                  <h3 className="font-bold text-lg mb-2">{mat.icon} {mat.name}</h3>
+                  <div className="text-sm bg-slate-100 p-3 rounded-xl border space-y-2">
+                    {MATERI_CONTENT[mat.id].map((c, i) => <div key={i} className="flex items-center">{c.type === 'video' ? <Video className="w-4 mr-2"/> : <FileText className="w-4 mr-2"/>} {c.title}</div>)}
+                  </div>
+                </div>
+            ))}
+          </div>
+        )}
+        {teacherTab === 'jadwal' && (
+          <div>
+            <h1 className="text-2xl font-extrabold text-gray-900 mb-6">Pengaturan Penjadwalan</h1>
+            <div className="bg-white p-6 rounded-2xl border max-w-lg space-y-4 shadow-sm">
+              <p className="text-sm text-gray-600">Atur batasan waktu pengerjaan modul bagi siswa. Pilih 'Tanpa Batas Waktu' agar siswa dapat berlatih tanpa tergesa-gesa.</p>
+              <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Batas Waktu Pengerjaan:</label>
+                  <select className="w-full p-3 border rounded-xl bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                    <option value="unlimited">Tanpa Batas Waktu (Santai)</option>
+                    <option value="30">30 Menit</option>
+                    <option value="45">45 Menit</option>
+                    <option value="60">60 Menit</option>
+                    <option value="90">90 Menit</option>
+                    <option value="120">120 Menit</option>
+                  </select>
+              </div>
+              <button className="w-full bg-blue-600 hover:bg-blue-700 transition-colors text-white py-3 rounded-xl font-bold mt-4 shadow-md">Simpan Pengaturan</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// 7. MODUL SISWA
+// ==========================================
+function ModulSiswa({ db, user, sessionUser, studentSubmissions, fetchSubmissions, showToast }) {
+  const [currentView, setCurrentView] = useState('student-dashboard');
+  const [selectedModule, setSelectedModule] = useState('lkpd');
+  const [selectedTopic, setSelectedTopic] = useState('pythagoras');
+  const [meetingId, setMeetingId] = useState(1);
+
+  const useCheatDetector = (active, currentContextGetter) => {
+    const [cheatCount, setCheatCount] = useState(0);
+    const [cheatLogs, setCheatLogs] = useState([]);
+    useEffect(() => {
+      if (!active) return;
+      const handleVisibilityChange = () => {
+        if (document.hidden) {
+          const timestamp = new Date().toLocaleTimeString('id-ID');
+          const contextInfo = typeof currentContextGetter === 'function' ? currentContextGetter() : 'Umum';
+          setCheatCount(prev => prev + 1);
+          setCheatLogs(prev => [...prev, { time: timestamp, context: contextInfo }]);
+        }
+      };
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+    }, [active, currentContextGetter]);
+    return { cheatCount, cheatLogs };
+  };
+
+  const ViewStudentDashboard = () => (
+    <div className="max-w-5xl mx-auto p-4 py-8">
+      <div className="bg-blue-900 rounded-3xl p-8 md:p-12 mb-8 text-white shadow-xl flex flex-col md:flex-row items-center justify-between">
+        <div>
+          <span className="bg-blue-800 text-blue-200 text-xs font-black px-3 py-1.5 rounded-full mb-4 inline-block">PORTAL SISWA</span>
+          <h1 className="text-3xl md:text-5xl font-black mb-2">PEMBELAJARAN MATEMATIKA</h1>
+          <p className="text-blue-200 font-medium">Selamat Datang, {sessionUser.name}</p>
+        </div>
+        <button onClick={() => setCurrentView('student-results')} className="mt-6 md:mt-0 bg-amber-400 text-slate-900 px-6 py-3.5 rounded-2xl font-black flex items-center">
+          <Trophy className="w-5 h-5 mr-2" /> Hasil & Feedback AI
+        </button>
+      </div>
+
+      <div className="grid md:grid-cols-4 gap-6">
+        {[
+          { id: 'materi', title: 'Bahan Materi', icon: <Video className="w-7 h-7" />, color: 'purple' },
+          { id: 'lkpd', title: 'LKPD Interaktif', icon: <Table className="w-7 h-7" />, color: 'blue' },
+          { id: 'latihan', title: 'Latihan Soal', icon: <Brain className="w-7 h-7" />, color: 'emerald' },
+          { id: 'evaluasi', title: 'Evaluasi Akhir', icon: <FileText className="w-7 h-7" />, color: 'amber' }
+        ].map(mod => (
+          <div key={mod.id} onClick={() => { setSelectedModule(mod.id); setCurrentView('select-config'); }} className="bg-white p-6 rounded-3xl shadow-sm border hover:shadow-lg transition-all cursor-pointer">
+            <div className={`w-14 h-14 bg-${mod.color}-50 text-${mod.color}-600 rounded-2xl flex items-center justify-center mb-4`}>{mod.icon}</div>
+            <h2 className="text-xl font-bold mb-2">{mod.title}</h2>
+            <div className={`text-${mod.color}-600 font-bold text-xs flex items-center`}>Buka Modul <ArrowRight className="w-4 h-4 ml-1" /></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const ViewSelectConfig = () => {
+    const [step, setStep] = useState(1);
+    const handleMeetingSelect = (meetId) => {
+        const isDone = studentSubmissions.some(s => s.docType === 'lkpd' && s.meetingId === meetId);
+        if (isDone) { showToast(`Pertemuan ${meetId} sudah dikerjakan.`); setCurrentView('student-results'); } 
+        else { setMeetingId(meetId); setCurrentView(selectedModule); }
+    };
+
+    return (
+      <div className="max-w-2xl mx-auto p-4 py-12">
+        <button onClick={() => setCurrentView('student-dashboard')} className="flex items-center text-gray-500 mb-6 font-semibold"><ChevronLeft className="w-5 h-5 mr-1"/> Kembali</button>
+        <div className="bg-white p-8 rounded-3xl shadow-xl border">
+          {step === 1 ? (
+            <>
+              <h2 className="text-2xl font-extrabold mb-6 text-center">Pilih Topik Materi</h2>
+              <div className="space-y-4">
+                {MATERI_LIST.map(mat => (
+                  <div key={mat.id} onClick={() => { setSelectedTopic(mat.id); ['materi','latihan','evaluasi'].includes(selectedModule) ? setCurrentView(selectedModule) : setStep(2); }} className="p-5 border-2 rounded-2xl cursor-pointer hover:border-blue-400 flex items-center justify-between">
+                    <div><h3 className="font-bold text-lg">{mat.icon} {mat.name}</h3></div>
+                    <ArrowRight className="w-5 h-5 text-gray-400" />
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 className="text-2xl font-extrabold mb-6 text-center">Pilih Pertemuan LKPD</h2>
+              <div className="space-y-4">
+                {[1, 2].map(meet => {
+                  const done = studentSubmissions.some(s => s.docType === 'lkpd' && s.meetingId === meet);
+                  return (
+                    <button key={meet} onClick={() => handleMeetingSelect(meet)} className="w-full p-5 border-2 border-blue-200 bg-blue-50 text-blue-800 rounded-2xl font-bold flex justify-between">
+                      Pertemuan {meet} {done && "✓ Selesai"} <ArrowRight className="w-5 h-5"/>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const ViewMateri = () => {
+    const data = MATERI_CONTENT[selectedTopic] || MATERI_CONTENT.pythagoras;
+    return (
+      <div className="max-w-3xl mx-auto p-4 py-8">
+        <button onClick={() => setCurrentView('student-dashboard')} className="mb-6 text-gray-500 font-bold flex items-center"><ChevronLeft className="w-4 h-4 mr-1"/> Kembali</button>
+        <div className="bg-white p-8 rounded-3xl shadow-sm border space-y-6">
+          <h1 className="text-3xl font-extrabold">Materi Pembelajaran</h1>
+          {data.map((m, i) => (
+            <div key={i} className="bg-purple-50 p-6 rounded-xl border border-purple-100">
+              <h3 className="font-bold text-purple-900 mb-4">{m.title}</h3>
+              {m.type === 'video' ? (
+                <div className="relative w-full overflow-hidden rounded-xl" style={{ paddingTop: '56.25%' }}>
+                  <iframe className="absolute top-0 left-0 w-full h-full" src={m.url} frameBorder="0" allowFullScreen></iframe>
+                </div>
+              ) : <p className="text-purple-800 text-sm whitespace-pre-wrap">{m.content}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const ViewLKPD = () => {
+    const filteredLkpd = LKPD_DATA.filter(l => l.meeting === meetingId && l.topic === selectedTopic);
+    const [currIdx, setCurrIdx] = useState(0);
+    const [answers, setAnswers] = useState({});
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    useEffect(() => { if (studentSubmissions.some(s => s.docType === 'lkpd' && s.meetingId === meetingId)) setCurrentView('student-results'); }, []);
+
+    const activeLvl = filteredLkpd[currIdx];
+    const { cheatCount, cheatLogs } = useCheatDetector(true, () => activeLvl ? activeLvl.title : "LKPD");
+
+    const submitWork = async () => {
+      setIsSubmitting(true);
+      const aiEval = {}; const qTexts = {}; let totScore = 0; let count = 0;
+      filteredLkpd.forEach(lvl => lvl.essays.forEach(e => {
+        qTexts[e.id] = e.q;
+        const res = evaluateAnswerWithAI(e, answers[e.id], cheatCount);
+        aiEval[e.id] = res; totScore += res.score; count++;
+      }));
+      const avg = count > 0 ? Math.round((totScore / (count * 10)) * 100) : 0;
+      
+      const payload = {
+        docType: 'lkpd', meetingId, topic: selectedTopic, student: sessionUser, essayAnswers: answers,
+        questionTexts: qTexts, aiEvaluations: aiEval, finalScore: avg, status: 'Selesai Dinilai AI',
+        cheatCount, cheatLogs, deviceInfo: navigator.userAgent, timestamp: new Date().toISOString()
+      };
+
+      try {
+        if (db && user) {
+          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'lkpd_submissions'), payload);
+          fetchSubmissions();
+          showToast("LKPD dikirim & dikoreksi AI!");
+          setCurrentView('student-results');
+        }
+      } catch (e) { showToast("Gagal mengirim"); }
+      setIsSubmitting(false);
+    };
+
+    if(!activeLvl) return null;
+    return (
+      <div className="max-w-3xl mx-auto p-4 py-8">
+        <div className="bg-white p-6 rounded-3xl shadow-lg border mb-6">
+          <h2 className="text-2xl font-extrabold mb-2">{activeLvl.title}</h2>
+          <p className="text-gray-600 mb-6">{activeLvl.desc}</p>
+          <div className="bg-blue-50 p-5 rounded-2xl text-blue-900 text-sm mb-6 whitespace-pre-wrap">{activeLvl.theory}</div>
+          
+          {activeLvl.hasTriangleDiagram && <Level1TriangleDiagram />}
+          {activeLvl.hasInteractiveVisualizer && <Level3InteractiveVisualizer />}
+          {activeLvl.hasTableVerification && <TableVerificationBox />}
+          {activeLvl.hasLadderIllustration && <Level5LadderIllustration />}
+
+          <div className="space-y-6">
+            {activeLvl.essays.map(q => (
+              <div key={q.id} className="bg-slate-50 p-5 rounded-xl border">
+                <p className="font-bold mb-3">{q.q}</p>
+                {q.type === 'draw_upload' ? <DrawingUploadBox value={answers[q.id]} onChange={v => setAnswers({...answers, [q.id]: v})}/> : 
+                  <textarea rows={3} value={answers[q.id] || ''} onChange={e => setAnswers({...answers, [q.id]: e.target.value})} className="w-full p-3 border rounded-xl" placeholder="Jawaban..."/>
+                }
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex justify-between">
+          <button onClick={() => setCurrIdx(currIdx-1)} disabled={currIdx===0} className="px-5 py-2 font-bold text-gray-500 disabled:opacity-0 flex items-center"><ChevronLeft className="inline"/> Kembali</button>
+          {currIdx < filteredLkpd.length - 1 ? (
+            <button onClick={() => setCurrIdx(currIdx+1)} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-xl flex items-center">Lanjut <ChevronRight className="ml-1"/></button>
+          ) : (
+            <button onClick={submitWork} disabled={isSubmitting} className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md">{isSubmitting ? 'Mengirim...' : 'Kirim LKPD'}</button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const ViewLatihan = () => {
+    const list = LATIHAN_DATA[selectedTopic] || LATIHAN_DATA.pythagoras;
+    const [selectedOpt, setSelectedOpt] = useState({});
+    const [submitted, setSubmitted] = useState(false);
+
+    return (
+      <div className="max-w-2xl mx-auto p-4 py-8">
+        <button onClick={() => setCurrentView('student-dashboard')} className="mb-6 text-gray-500 font-bold flex items-center"><ChevronLeft className="w-4 h-4 mr-1"/> Kembali</button>
+        <div className="bg-white p-8 rounded-3xl shadow-sm border space-y-8">
+          <h1 className="text-2xl font-black">Latihan Mandiri</h1>
+          {list.map((item, idx) => (
+            <div key={item.id} className="space-y-3">
+              <p className="font-bold text-sm text-gray-800">{idx + 1}. {item.q}</p>
+              <div className="grid gap-2">
+                {item.options.map((opt, oIdx) => (
+                  <button key={oIdx} onClick={() => !submitted && setSelectedOpt({...selectedOpt, [item.id]: oIdx})} className={`w-full text-left p-3 rounded-xl border text-sm font-semibold transition-all ${selectedOpt[item.id] === oIdx ? 'bg-blue-50 border-blue-600 text-blue-900' : 'bg-gray-50 border-gray-200'}`}>
+                    {opt}
+                  </button>
+                ))}
+              </div>
+              {submitted && (
+                <div className={`p-3 rounded-xl text-xs ${selectedOpt[item.id] === item.ans ? 'bg-emerald-50 text-emerald-900' : 'bg-red-50 text-red-900'}`}>
+                  {selectedOpt[item.id] === item.ans ? '✓ Benar! ' : '✗ Kurang tepat. '} {item.explanation}
+                </div>
+              )}
+            </div>
+          ))}
+          {!submitted ? (
+            <button onClick={() => setSubmitted(true)} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-md">Periksa Jawaban</button>
+          ) : (
+            <button onClick={() => setCurrentView('student-dashboard')} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold">Kembali ke Dashboard</button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const ViewEvaluasi = () => {
+    const evalData = EVALUASI_DATA[selectedTopic] || EVALUASI_DATA.pythagoras;
+    const [mcqAns, setMcqAns] = useState({});
+    const [essayAns, setEssayAns] = useState({});
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const { cheatCount, cheatLogs } = useCheatDetector(true, () => "Evaluasi Akhir");
+
+    const submitEval = async () => {
+      setIsSubmitting(true);
+      let score = 0;
+      evalData.mcqs.forEach(m => { if (mcqAns[m.id] === m.ans) score += 25; });
+
+      const aiEval = {}; const qTexts = {};
+      evalData.essays.forEach(e => {
+        qTexts[e.id] = e.q;
+        const res = evaluateAnswerWithAI(e, essayAns[e.id], cheatCount);
+        aiEval[e.id] = res;
+      });
+
+      const payload = {
+        docType: 'evaluasi', topic: selectedTopic, student: sessionUser, mcqAnswers: mcqAns, essayAnswers: essayAns,
+        questionTexts: qTexts, aiEvaluations: aiEval, finalScore: score, status: 'Selesai Dinilai AI',
+        cheatCount, cheatLogs, deviceInfo: navigator.userAgent, timestamp: new Date().toISOString()
+      };
+
+      try {
+        if (db && user) {
+          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'lkpd_submissions'), payload);
+          fetchSubmissions();
+          showToast("Evaluasi dikirim!");
+          setCurrentView('student-results');
+        }
+      } catch(e) { showToast("Gagal mengirim"); }
+      setIsSubmitting(false);
+    };
+
+    return (
+      <div className="max-w-3xl mx-auto p-4 py-8">
+        <div className="bg-white p-8 rounded-3xl shadow-lg border space-y-8">
+          <div>
+            <h1 className="text-3xl font-extrabold mb-2">Evaluasi Akhir</h1>
+            <p className="text-sm text-gray-500">Kerjakan dengan jujur. Terdeteksi keluar halaman: {cheatCount} kali.</p>
+          </div>
+
+          <div className="space-y-6">
+            <h2 className="font-black text-lg text-blue-900 border-b pb-2">A. Pilihan Ganda</h2>
+            {evalData.mcqs.map((m, idx) => (
+              <div key={m.id} className="space-y-3 bg-gray-50 p-5 rounded-2xl border">
+                <p className="font-bold text-sm">{idx + 1}. {m.q}</p>
+                <div className="grid gap-2">
+                  {m.options.map((opt, oIdx) => (
+                    <button key={oIdx} onClick={() => setMcqAns({...mcqAns, [m.id]: oIdx})} className={`w-full text-left p-3 rounded-xl border text-sm font-semibold ${mcqAns[m.id] === oIdx ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'}`}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-6">
+            <h2 className="font-black text-lg text-blue-900 border-b pb-2">B. Soal Uraian</h2>
+            {evalData.essays.map(e => (
+              <div key={e.id} className="bg-gray-50 p-5 rounded-2xl border">
+                <p className="font-bold text-sm mb-3">{e.q}</p>
+                {e.type === 'draw_upload' ? <DrawingUploadBox value={essayAns[e.id]} onChange={v => setEssayAns({...essayAns, [e.id]: v})} /> :
+                  <textarea rows={3} value={essayAns[e.id] || ''} onChange={ev => setEssayAns({...essayAns, [e.id]: ev.target.value})} className="w-full p-3 border rounded-xl bg-white text-sm" placeholder="Tulis jawaban..." />
+                }
+              </div>
+            ))}
+          </div>
+
+          <button onClick={submitEval} disabled={isSubmitting} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-4 rounded-2xl font-bold shadow-lg transition-colors">
+            {isSubmitting ? 'Mengirim...' : 'Selesai & Kirim Evaluasi'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const ViewStudentResults = () => {
+    const [expandedId, setExpandedId] = useState(null);
+
+    return (
+      <div className="max-w-4xl mx-auto p-4 py-8">
+        <button onClick={() => setCurrentView('student-dashboard')} className="mb-6 font-bold text-gray-500 hover:text-gray-800 transition-colors flex items-center"><ChevronLeft className="w-4 h-4 mr-1"/> Dashboard</button>
+        <h1 className="text-3xl font-extrabold mb-6">Hasil Pekerjaanmu</h1>
+        {studentSubmissions.length === 0 ? <p className="text-gray-500 bg-white p-6 rounded-2xl border text-center">Belum ada tugas diselesaikan.</p> : (
+            <div className="space-y-6">
+                {studentSubmissions.map(sub => (
+                    <div key={sub.id} className="bg-white rounded-3xl border shadow-sm overflow-hidden">
+                        <div className="p-6 flex flex-col md:flex-row justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setExpandedId(expandedId === sub.id ? null : sub.id)}>
+                            <div className="w-full md:w-auto">
+                                <h3 className="font-bold text-lg text-gray-900">{sub.docType === 'lkpd' ? `LKPD Pertemuan ${sub.meetingId}` : 'Evaluasi Akhir'}</h3>
+                                <p className="text-xs text-gray-500 mt-1 flex items-center"><Clock className="w-3 h-3 mr-1"/> Disubmit: {new Date(sub.timestamp).toLocaleString('id-ID')}</p>
+                                <span className={`text-[10px] font-bold px-2 py-1 rounded-md mt-3 inline-block ${sub.status.includes('Guru') ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>{sub.status}</span>
+                            </div>
+                            <div className="flex items-center space-x-4 mt-4 md:mt-0 w-full md:w-auto justify-between md:justify-end">
+                                <div className="text-center bg-slate-900 text-white p-3 md:p-4 rounded-xl min-w-[80px]">
+                                  <p className="text-[10px] text-slate-400">Nilai Akhir</p>
+                                  <p className="text-2xl md:text-3xl font-black text-emerald-400">{sub.finalScore}</p>
+                                </div>
+                                <div className="text-gray-400">
+                                    {expandedId === sub.id ? <ChevronLeft className="w-6 h-6 -rotate-90 transition-transform" /> : <ChevronRight className="w-6 h-6 transition-transform" />}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {expandedId === sub.id && (
+                            <div className="border-t border-gray-100 bg-gray-50 p-6 space-y-6">
+                                {sub.teacherNotes && (
+                                    <div className="bg-amber-50 p-4 rounded-xl border border-amber-200">
+                                        <h4 className="font-bold text-amber-900 flex items-center mb-2"><Award className="w-4 h-4 mr-2"/> Catatan dari Guru</h4>
+                                        <p className="text-sm text-amber-800 whitespace-pre-wrap">{sub.teacherNotes}</p>
+                                    </div>
+                                )}
+                                
+                                <div>
+                                    <h4 className="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center"><MessageSquare className="w-4 h-4 mr-2"/> Rincian Jawaban & Feedback AI</h4>
+                                    <div className="space-y-4">
+                                        {sub.aiEvaluations && Object.keys(sub.aiEvaluations).map(qId => (
+                                            <div key={qId} className="bg-white p-4 rounded-xl border shadow-sm">
+                                                <p className="font-semibold text-gray-800 text-sm mb-3">{sub.questionTexts?.[qId]}</p>
+                                                <div className="bg-gray-100 p-3 rounded-lg text-sm text-gray-700 mb-3 border border-gray-200">
+                                                    <span className="font-bold text-xs text-gray-500 block mb-1">Jawabanmu:</span>
+                                                    {typeof sub.essayAnswers?.[qId] === 'object' ? sub.essayAnswers?.[qId].text : (sub.essayAnswers?.[qId] || <i className="text-gray-400">Tidak ada jawaban tertulis</i>)}
+                                                    {typeof sub.essayAnswers?.[qId] === 'object' && sub.essayAnswers?.[qId].image && (
+                                                        <img src={sub.essayAnswers[qId].image} alt="Lampiran" className="mt-2 max-h-32 rounded-lg border shadow-sm" />
+                                                    )}
+                                                </div>
+                                                <div className={`p-3 rounded-lg text-sm flex items-start ${sub.aiEvaluations[qId].score >= 8 ? 'bg-emerald-50 text-emerald-900 border border-emerald-200' : sub.aiEvaluations[qId].score >= 5 ? 'bg-blue-50 text-blue-900 border border-blue-200' : 'bg-red-50 text-red-900 border border-red-200'}`}>
+                                                    <Sparkles className={`w-4 h-4 mr-2 mt-0.5 shrink-0 ${sub.aiEvaluations[qId].score >= 8 ? 'text-emerald-500' : sub.aiEvaluations[qId].score >= 5 ? 'text-blue-500' : 'text-red-500'}`} />
+                                                    <div>
+                                                        <span className="font-bold block mb-1">Penilaian AI (Skor: {sub.aiEvaluations[qId].score}/10):</span>
+                                                        {sub.aiEvaluations[qId].feedback}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {(!sub.aiEvaluations || Object.keys(sub.aiEvaluations).length === 0) && (
+                                            <p className="text-sm text-gray-500 italic">Rincian evaluasi tidak tersedia untuk tugas ini.</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      {currentView === 'student-dashboard' && <ViewStudentDashboard />}
+      {currentView === 'select-config' && <ViewSelectConfig />}
+      {currentView === 'materi' && <ViewMateri />}
+      {currentView === 'lkpd' && <ViewLKPD />}
+      {currentView === 'evaluasi' && <ViewEvaluasi />}
+      {currentView === 'student-results' && <ViewStudentResults />}
+    </>
+  );
+}
+
+// ==========================================
+// 8. KOMPONEN UTAMA (APP) & MANAJEMEN STATE
+// ==========================================
+export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [sessionUser, setSessionUser] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [user, setUser] = useState(null);
+  
+  const [allSubmissions, setAllSubmissions] = useState([]);
+  const [studentSubmissions, setStudentSubmissions] = useState([]);
+
+  useEffect(() => {
+    if (auth) {
+      const initAuth = async () => {
+        try {
+          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+          } else {
+            await signInAnonymously(auth);
+          }
+        } catch (error) { console.error("Auth failed:", error); }
+      };
+      initAuth();
+      
+      const unsubscribe = onAuthStateChanged(auth, async (u) => {
+        setUser(u);
+        if(u && db) fetchSubmissions();
+      });
+      return () => unsubscribe();
+    }
+  }, []);
+
+  const fetchSubmissions = async () => {
+    if(!db) return;
+    try {
+        const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'lkpd_submissions'));
+        const data = snap.docs.map(doc => ({id: doc.id, ...doc.data()}));
+        setAllSubmissions(data);
+    } catch(e) { console.error("Fetch sub error:", e); }
+  };
+
+  useEffect(() => {
+    if(sessionUser && sessionUser.role === 'student') {
+        setStudentSubmissions(allSubmissions.filter(d => d.student?.username === sessionUser.username));
+    }
+  }, [sessionUser, allSubmissions]);
+
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+  const handleLogout = () => { setIsLoggedIn(false); setSessionUser(null); };
+
+  const QuickNavBar = () => (
+    <div className="bg-slate-900 text-white px-4 py-3 flex justify-between items-center shadow-lg border-b sticky top-0 z-50">
+      <div className="flex items-center space-x-3"><div className="bg-blue-600 p-2 rounded-lg"><BookOpen className="w-5 h-5" /></div><h1 className="font-black text-lg">MATHLEARN AI</h1></div>
+      {isLoggedIn && (
+        <div className="flex items-center space-x-3">
+          <div className="text-xs text-slate-300 mr-2">{sessionUser.name} ({sessionUser.role})</div>
+          <button onClick={handleLogout} className="px-3 py-1.5 bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white rounded-lg text-xs font-bold">Keluar</button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 text-gray-800">
+      {toast && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] bg-slate-900 text-white px-6 py-3 rounded-full font-bold shadow-2xl flex items-center text-sm">
+          <CheckCircle2 className="w-5 h-5 mr-2 text-emerald-400" /> {toast}
+        </div>
+      )}
+      
+      {!isLoggedIn ? (
+          <ModulAuth onLogin={(user) => { setSessionUser(user); setIsLoggedIn(true); }} db={db} showToast={showToast} />
+      ) : (
+          <>
+            <QuickNavBar />
+            {sessionUser.role === 'admin' && <ModulAdmin db={db} sessionUser={sessionUser} />}
+            {sessionUser.role === 'teacher' && <ModulGuru db={db} sessionUser={sessionUser} allSubmissions={allSubmissions} fetchSubmissions={fetchSubmissions} showToast={showToast} />}
+            {sessionUser.role === 'student' && <ModulSiswa db={db} user={user} sessionUser={sessionUser} studentSubmissions={studentSubmissions} fetchSubmissions={fetchSubmissions} showToast={showToast} />}
+          </>
+      )}
+    </div>
+  );
+}
